@@ -50,11 +50,13 @@ class TESpecProvider(BackendSpecProvider):
         cross_entropy_loss_fusion: bool = False,
         cross_entropy_fusion_impl: str = "native",
         cuda_graph_impl: Optional[str] = None,
+        cross_entropy_fusion_overwrite_input: bool = False,
     ) -> None:
         self._use_te_op_fuser = use_te_op_fuser
         self._cross_entropy_loss_fusion = cross_entropy_loss_fusion
         self._cross_entropy_fusion_impl = cross_entropy_fusion_impl
         self._cuda_graph_impl = cuda_graph_impl
+        self._cross_entropy_fusion_overwrite_input = cross_entropy_fusion_overwrite_input
 
     def linear(self) -> type:
         """Which linear module TE backend uses"""
@@ -164,5 +166,8 @@ class TESpecProvider(BackendSpecProvider):
         config built directly can still ask for it.
         """
         return select_cross_entropy(
-            self._cross_entropy_loss_fusion, self._cross_entropy_fusion_impl, self._cuda_graph_impl
+            self._cross_entropy_loss_fusion,
+            self._cross_entropy_fusion_impl,
+            self._cuda_graph_impl,
+            self._cross_entropy_fusion_overwrite_input,
         )

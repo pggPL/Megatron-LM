@@ -23,7 +23,18 @@ def test_native_cross_entropy_loss_fusion_is_allowed():
     assert config.cross_entropy_fusion_impl == 'native'
 
 
-def test_te_cross_entropy_loss_fusion_is_disabled_by_training_args(monkeypatch):
+@pytest.mark.parametrize("fusion,impl", [(False, "native"), (False, "te"), (True, "native")])
+def test_cross_entropy_input_reuse_requires_te_fusion(fusion, impl):
+    with pytest.raises(ValueError, match="requires TE cross-entropy fusion"):
+        ModelParallelConfig(
+            cross_entropy_loss_fusion=fusion,
+            cross_entropy_fusion_impl=impl,
+            cross_entropy_fusion_overwrite_input=True,
+        )
+
+
+@pytest.mark.parametrize("overwrite_input", [False, True])
+def test_te_cross_entropy_loss_fusion_is_disabled_by_training_args(monkeypatch, overwrite_input):
     monkeypatch.setattr(sys, 'argv', ['test_model_parallel_config.py'])
     args = parse_args()
     args.num_layers = 2
@@ -40,6 +51,7 @@ def test_te_cross_entropy_loss_fusion_is_disabled_by_training_args(monkeypatch):
     args.vocab_size = 1024
     args.cross_entropy_loss_fusion = True
     args.cross_entropy_fusion_impl = 'te'
+    args.cross_entropy_fusion_overwrite_input = overwrite_input
 
     with pytest.raises(AssertionError, match="Transformer Engine cross entropy loss fusion"):
         validate_args(args)
