@@ -333,6 +333,13 @@ class ModelParallelConfig:
        from Transformer Engine library is used. Defaults to 'native'.
     """
 
+    cross_entropy_fusion_overwrite_input: bool = False
+    """Reuse logits storage for TE cross-entropy gradients. Requires TE >= 2.19.0.
+    Logits must be contiguous and must not be reused or needed by another backward operation.
+    Only one backward pass per loss is supported; torch.compile incurs a graph break.
+    This opt-in does not lift the training-CLI restriction on TE cross-entropy fusion.
+    """
+
     tp_comm_overlap_disable_qkv: bool = False
     """
        If true, the AllGather -> Gemm overlap for QKV gets disabled
@@ -538,6 +545,13 @@ class ModelParallelConfig:
 
         if self.autocast_dtype is None:
             self.autocast_dtype = self.params_dtype
+
+        if self.cross_entropy_fusion_overwrite_input and not (
+            self.cross_entropy_loss_fusion and self.cross_entropy_fusion_impl == 'te'
+        ):
+            raise ValueError(
+                "cross_entropy_fusion_overwrite_input requires TE cross-entropy fusion"
+            )
 
         if self.cross_entropy_loss_fusion and self.cross_entropy_fusion_impl == 'te':
             warnings.warn(

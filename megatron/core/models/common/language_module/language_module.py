@@ -70,6 +70,9 @@ class LanguageModule(MegatronModule):
                 cross_entropy_loss_fusion=getattr(config, "cross_entropy_loss_fusion", False),
                 cross_entropy_fusion_impl=getattr(config, "cross_entropy_fusion_impl", "native"),
                 cuda_graph_impl=getattr(config, "cuda_graph_impl", None),
+                cross_entropy_fusion_overwrite_input=getattr(
+                    config, "cross_entropy_fusion_overwrite_input", False
+                ),
             ),
         )
 

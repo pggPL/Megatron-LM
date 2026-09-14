@@ -72,6 +72,7 @@ def select_cross_entropy(
     cross_entropy_loss_fusion: bool = False,
     cross_entropy_fusion_impl: str = "native",
     cuda_graph_impl: Optional[str] = None,
+    cross_entropy_fusion_overwrite_input: bool = False,
 ) -> CrossEntropyTarget:
     """Which cross entropy a config asks for, resolved once rather than on every forward.
 
@@ -83,6 +84,13 @@ def select_cross_entropy(
             f"unknown cross_entropy_fusion_impl={cross_entropy_fusion_impl!r}. "
             "Valid choices: native, te"
         )
+    if cross_entropy_fusion_overwrite_input:
+        if not cross_entropy_loss_fusion or cross_entropy_fusion_impl != "te":
+            raise ValueError(
+                "cross_entropy_fusion_overwrite_input requires TE cross-entropy fusion"
+            )
+        if not is_te_min_version("2.19.0"):
+            raise RuntimeError("Cross-entropy input reuse requires TransformerEngine >= 2.19.0")
     if not cross_entropy_loss_fusion:
         return unfused_cross_entropy
     if cross_entropy_fusion_impl == "native":
@@ -98,7 +106,11 @@ def select_cross_entropy(
             f"found version {get_te_version()}. Please upgrade TransformerEngine or set "
             "cuda_graph_impl to a value other than 'full_iteration'."
         )
-    return partial(te_cross_entropy, cuda_graph_capturable=capturable)
+    return partial(
+        te_cross_entropy,
+        cuda_graph_capturable=capturable,
+        overwrite_input=cross_entropy_fusion_overwrite_input,
+    )
 
 
 class BackendSpecProvider(Protocol):
@@ -175,10 +187,12 @@ class LocalSpecProvider(BackendSpecProvider):
         cross_entropy_loss_fusion: bool = False,
         cross_entropy_fusion_impl: str = "native",
         cuda_graph_impl: Optional[str] = None,
+        cross_entropy_fusion_overwrite_input: bool = False,
     ) -> None:
         self._cross_entropy_loss_fusion = cross_entropy_loss_fusion
         self._cross_entropy_fusion_impl = cross_entropy_fusion_impl
         self._cuda_graph_impl = cuda_graph_impl
+        self._cross_entropy_fusion_overwrite_input = cross_entropy_fusion_overwrite_input
 
     def column_parallel_linear(self) -> type:
         """Which column parallel linear module the backend uses"""
@@ -253,7 +267,10 @@ class LocalSpecProvider(BackendSpecProvider):
     def vocab_parallel_cross_entropy(self) -> CrossEntropyTarget:
         """Which vocab-parallel cross entropy to use."""
         return select_cross_entropy(
-            self._cross_entropy_loss_fusion, self._cross_entropy_fusion_impl, self._cuda_graph_impl
+            self._cross_entropy_loss_fusion,
+            self._cross_entropy_fusion_impl,
+            self._cuda_graph_impl,
+            self._cross_entropy_fusion_overwrite_input,
         )
 
 
@@ -358,6 +375,7 @@ def get_backend(
     cross_entropy_loss_fusion: bool = False,
     cross_entropy_fusion_impl: str = "native",
     cuda_graph_impl: str | None = None,
+    cross_entropy_fusion_overwrite_input: bool = False,
 ) -> BackendSpecProvider:
     """Build the provider for a named backend.
 
@@ -373,18 +391,21 @@ def get_backend(
             cross_entropy_loss_fusion=cross_entropy_loss_fusion,
             cross_entropy_fusion_impl=cross_entropy_fusion_impl,
             cuda_graph_impl=cuda_graph_impl,
+            cross_entropy_fusion_overwrite_input=cross_entropy_fusion_overwrite_input,
         )
     elif transformer_impl == "inference_optimized":
         base = InferenceSpecProvider(
             cross_entropy_loss_fusion=cross_entropy_loss_fusion,
             cross_entropy_fusion_impl=cross_entropy_fusion_impl,
             cuda_graph_impl=cuda_graph_impl,
+            cross_entropy_fusion_overwrite_input=cross_entropy_fusion_overwrite_input,
         )
     elif transformer_impl == "local":
         base = LocalSpecProvider(
             cross_entropy_loss_fusion=cross_entropy_loss_fusion,
             cross_entropy_fusion_impl=cross_entropy_fusion_impl,
             cuda_graph_impl=cuda_graph_impl,
+            cross_entropy_fusion_overwrite_input=cross_entropy_fusion_overwrite_input,
         )
     else:
         raise ValueError(
@@ -435,4 +456,7 @@ def get_backend_from_config(
         cross_entropy_loss_fusion=getattr(config, "cross_entropy_loss_fusion", False),
         cross_entropy_fusion_impl=getattr(config, "cross_entropy_fusion_impl", "native"),
         cuda_graph_impl=getattr(config, "cuda_graph_impl", None),
+        cross_entropy_fusion_overwrite_input=getattr(
+            config, "cross_entropy_fusion_overwrite_input", False
+        ),
     )

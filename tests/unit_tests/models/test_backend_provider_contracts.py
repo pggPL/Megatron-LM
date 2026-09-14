@@ -91,6 +91,41 @@ class TestCrossEntropyFollowsTheConfig:
         ).vocab_parallel_cross_entropy()
         assert target is fused_vocab_parallel_cross_entropy
 
+    @pytest.mark.parametrize(
+        "transformer_impl", ["local", "transformer_engine", "inference_optimized"]
+    )
+    @pytest.mark.parametrize("overwrite_input", [False, True])
+    def test_te_input_reuse_follows_config(self, transformer_impl, overwrite_input):
+        config = _config(
+            transformer_impl=transformer_impl,
+            cross_entropy_loss_fusion=True,
+            cross_entropy_fusion_impl="te",
+            cross_entropy_fusion_overwrite_input=overwrite_input,
+        )
+        with patch("megatron.core.models.backends.is_te_min_version", return_value=True):
+            target = get_backend_from_config(config).vocab_parallel_cross_entropy()
+        assert target.keywords["overwrite_input"] is overwrite_input
+
+    def test_input_reuse_rejects_old_te(self):
+        config = _config(
+            cross_entropy_loss_fusion=True,
+            cross_entropy_fusion_impl="te",
+            cross_entropy_fusion_overwrite_input=True,
+        )
+        with patch("megatron.core.models.backends.is_te_min_version", return_value=False):
+            with pytest.raises(RuntimeError, match="TransformerEngine >= 2.19.0"):
+                get_backend_from_config(config).vocab_parallel_cross_entropy()
+
+    @pytest.mark.parametrize("fusion,impl", [(False, "native"), (False, "te"), (True, "native")])
+    def test_input_reuse_requires_te_fusion(self, fusion, impl):
+        config = _config(
+            cross_entropy_loss_fusion=fusion,
+            cross_entropy_fusion_impl=impl,
+            cross_entropy_fusion_overwrite_input=True,
+        )
+        with pytest.raises(ValueError, match="requires TE cross-entropy fusion"):
+            get_backend_from_config(config).vocab_parallel_cross_entropy()
+
     def test_an_explicit_te_request_is_not_silently_ignored(self):
         """megatron/training/arguments.py rejects this, but a config built directly can ask."""
         target = get_backend_from_config(

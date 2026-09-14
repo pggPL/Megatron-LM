@@ -19,7 +19,7 @@ from megatron.core.extensions.transformer_engine import HAVE_TE
 from megatron.core.tensor_parallel.random import model_parallel_cuda_manual_seed
 from megatron.core.transformer.enums import AttnMaskType
 from megatron.core.transformer.transformer_config import TransformerConfig
-from megatron.core.utils import init_method_normal
+from megatron.core.utils import init_method_normal, is_te_min_version
 from tests.unit_tests.determinism.kernels.harness import (
     assert_module_replays_bit_exact,
     assert_replays_bit_exact,
@@ -39,6 +39,7 @@ if HAVE_TE:
         TELayerNormColumnParallelLinear,
         TENorm,
         TERowParallelLinear,
+        te_cross_entropy,
     )
 
 HIDDEN, FFN, TOKENS = 2048, 8192, 8192
@@ -70,6 +71,20 @@ class TestTEWrappers:
 
     def teardown_method(self, method):
         Utils.destroy_model_parallel()
+
+    @pytest.mark.skipif(not is_te_min_version("2.19.0"), reason="requires TE input reuse")
+    @pytest.mark.parametrize("overwrite_input", [False, True])
+    def test_te_cross_entropy_replays(self, overwrite_input):
+        seeded()
+        logits = torch.randn(256, 2, 4096, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+        labels = torch.randint(0, 4096, (256, 2), device="cuda")
+
+        def loss(inp):
+            return te_cross_entropy(inp.clone(), labels, overwrite_input=overwrite_input)
+
+        assert_replays_bit_exact(
+            loss, (logits,), replays=3, contention=True, what=f"TECrossEntropy[{overwrite_input}]"
+        )
 
     def test_te_column_parallel_linear_replays(self):
         seeded()

@@ -253,7 +253,8 @@ KERNELS: Tuple[KernelEntry, ...] = (
         sources=("megatron/core/extensions/transformer_engine.py",),
         tests=(K + "test_te_wrappers.py", C + "test_fp8_determinism.py"),
         kind="te-wrapper",
-        notes="TE Linear / LayerNormLinear / Norm / GroupedLinear / DotProductAttention / fused RoPE replayed standalone; "
+        notes="TE Linear / LayerNormLinear / Norm / GroupedLinear / DotProductAttention / fused RoPE / "
+        "cross entropy (safe and input-reuse modes) replayed standalone; "
         "FP8/FP4 recipes in the model-level suite.",
     ),
     KernelEntry(
